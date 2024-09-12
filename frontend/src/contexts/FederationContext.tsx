@@ -15,6 +15,8 @@ import { federationLottery } from '../utils';
 import { AppContext, type UseAppStoreType } from './AppContext';
 import { GarageContext, type UseGarageStoreType } from './GarageContext';
 import { type Origin, type Origins } from '../models/Coordinator.model';
+import { SimplePool } from 'nostr-tools';
+import { SubCloser } from 'nostr-tools/lib/types/abstract-pool';
 
 export interface CurrentOrderIdProps {
   id: number | null;
@@ -56,6 +58,9 @@ export const FederationContextProvider = ({
   );
   const [federationUpdatedAt, setFederationUpdatedAt] = useState<string>(new Date().toISOString());
 
+  const [relayPool] = useState<SimplePool>(new SimplePool());
+  const [relayConnection, setRelayConnection] = useState<SubCloser>();
+
   useEffect(() => {
     setMaker((maker) => {
       return { ...maker, coordinator: sortedCoordinators[0] };
@@ -63,6 +68,27 @@ export const FederationContextProvider = ({
     federation.registerHook('onFederationUpdate', () => {
       setFederationUpdatedAt(new Date().toISOString());
     });
+
+    setRelayConnection(
+      relayPool.subscribeMany(
+        ['ws://satstraoq35jffvkgpfoqld32nzw2siuvowanruindbfojowpwsjdgad.onion/nostr'],
+        [
+          {
+            authors: ['116bf3493edd2136f5e0c6a11b6c24d0eb34bbd5bf8ede965a9548726de710c7'],
+            kinds: [38383],
+            '#s': ['pending'],
+          },
+        ],
+        {
+          onevent(event) {
+            console.log(event);
+          },
+          oneose() {
+            relayConnection?.close();
+          },
+        },
+      ),
+    );
   }, []);
 
   useEffect(() => {
