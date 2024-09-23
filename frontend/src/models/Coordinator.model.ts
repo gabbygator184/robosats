@@ -187,7 +187,7 @@ export class Coordinator {
       if (this.isUpdated()) onUpdate(this.shortAlias);
     };
 
-    this.loadBook(onDataLoad);
+    // this.loadBook(onDataLoad);
     this.loadLimits(onDataLoad);
     this.loadInfo(onDataLoad);
   };
