@@ -68,7 +68,6 @@ export const FederationContextProvider = ({
   useEffect(() => {
     if (client !== 'mobile' || torStatus === 'ON' || !settings.useProxy) {
       void federation.updateUrl(origin, settings, hostUrl);
-      void federation.connectNostr();
       void federation.update();
     }
   }, [settings.network, settings.useProxy, torStatus]);

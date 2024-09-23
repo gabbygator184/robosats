@@ -181,6 +181,9 @@ export class Federation {
     this.exchange.onlineCoordinators = 0;
     this.exchange.loadingCoordinators = Object.keys(this.coordinators).length;
     this.updateEnabledCoordinators();
+
+    this.connectNostr();
+
     for (const coor of Object.values(this.coordinators)) {
       void coor.update(() => {
         this.exchange.onlineCoordinators = this.exchange.onlineCoordinators + 1;
