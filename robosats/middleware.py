@@ -1,10 +1,13 @@
 import hashlib
 import re
+import time
 from datetime import timedelta
 
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
+from decouple import config
 from django.contrib.auth.models import AnonymousUser, User, update_last_login
+from django.core.cache import cache
 from django.db import IntegrityError
 from django.utils import timezone
 from django.utils.deprecation import MiddlewareMixin
@@ -35,6 +38,31 @@ def parse_nostr_pubkey(request):
     if match:
         return match.group("pubkey").lower()
     return ""
+
+
+def robot_creation_allowed() -> bool:
+    """Global, worker-shared robot creation rate limit.
+
+    Disabled by default. When `ROBOT_CREATION_RATE > 0`, allows at most that many
+    creations every `ROBOT_CREATION_WINDOW` seconds, enforced with a single atomic
+    Redis counter shared across all gunicorn workers (rotating IP/UA/token does not
+    bypass it). Set RATE <= 0 (or leave it unset) to disable.
+    """
+    rate = int(config("ROBOT_CREATION_RATE", default=0))
+    window = int(config("ROBOT_CREATION_WINDOW", default=10))
+    if rate <= 0:
+        return True
+
+    bucket = int(time.time()) // max(window, 1)
+    key = f"limiter:robot_create:{bucket}"
+    if cache.add(key, 1, timeout=window):
+        return True
+    try:
+        return cache.incr(key) <= rate
+    except ValueError:
+        # Key expired between the add() and the incr(); start the new window.
+        cache.add(key, 1, timeout=window)
+        return True
 
 
 class DisableCSRFMiddleware(object):
@@ -138,6 +166,11 @@ class RobotTokenSHA256AuthenticationMiddleWare:
             if not public_key or not encrypted_private_key or not nostr_pubkey:
                 return JsonResponse(new_error(7001), status=status.HTTP_400_BAD_REQUEST)
 
+            if not robot_creation_allowed():
+                return JsonResponse(
+                    new_error(7005), status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+
             (
                 valid,
                 bad_keys_context,
@@ -163,9 +196,7 @@ class RobotTokenSHA256AuthenticationMiddleWare:
             except IntegrityError:
                 # Nickname collision: this hash already has a user (race condition or
                 # NickGen pool exhaustion). Return a conflict error instead of a 500.
-                return JsonResponse(
-                    new_error(7004), status=status.HTTP_409_CONFLICT
-                )
+                return JsonResponse(new_error(7004), status=status.HTTP_409_CONFLICT)
 
             # Store hash_id
             user.robot.hash_id = hash

@@ -1,7 +1,7 @@
 # /api/tests — mocked unit tests (agent reference)
 
-Two files: `test_errors.py`, `test_utils.py`. Plain Django `TestCase` (not DRF
-`APITestCase`) — no HTTP client cycle exercised. Every external call
+Files: `test_errors.py`, `test_utils.py`, `test_middleware.py`. Plain Django `TestCase`
+(not DRF `APITestCase`) — no HTTP client cycle exercised. Every external call
 (config lookups, HTTP session, file I/O) is mocked via `unittest.mock`. **Not** a live
 Lightning-node or live-HTTP suite.
 
@@ -15,6 +15,10 @@ Lightning-node or live-HTTP suite.
   exercised here, only the wrapper plumbing. `get_lnd_version`/`get_cln_version` are the one
   exception: gated by env `LNVENDOR` and unmocked, so they can touch a real node/binary if
   that env var happens to be set.
+- `test_middleware.py`: `robosats.middleware.robot_creation_allowed` global rate limit
+  (rate/window respected, `RATE=0` disables) and the middleware HTTP 429 path without
+  creating a `User`/`Robot`. Uses a locmem cache override + a stubbed `config` — no Redis
+  or Lightning required.
 
 ## Contrast with root `/tests`
 `/home/koala/Workspace/robosats/tests/` (outside `api/`) is a **separate**, much heavier

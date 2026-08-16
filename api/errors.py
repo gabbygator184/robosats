@@ -92,6 +92,7 @@ ERRORS = {
     7002: "Invalid keys: {bad_keys_context}",
     7003: "Authentication credentials were not provided.",
     7004: "Robot nickname already taken. Please try a different token.",
+    7005: "Too many robots being created on this coordinator. Please, try again in a moment.",
 }
 
 

@@ -145,9 +145,13 @@ Product intent). Field-level breakdown in `api/models/AGENTS.md`'s **Admin actio
 ## Cross-app boundaries
 `robosats/middleware.py` runs before every view: validates base91 token header, on first
 sight **auto-creates `User`+`Robot`**, nickname via `NickGenerator` (see
-`api/nick_generator/AGENTS.md`). `api/` never creates a Robot directly. `chat/` owns
-`/api/chat/` + `chatrooms_cleansing`. `control/` owns `BalanceLog` + `do_accounting`/
-`compute_node_balance`.
+`api/nick_generator/AGENTS.md`). Robot auto-creation is **rate-limited globally** by
+`robot_creation_allowed()` (redis/`cache` `INCR` on a per-`ROBOT_CREATION_WINDOW` bucket,
+`ROBOT_CREATION_RATE` max) — **disabled by default**, opt-in only when
+`ROBOT_CREATION_RATE > 0` is set; returns error `7005` (HTTP 429) before the
+PGP validation when exceeded; `ROBOT_CREATION_RATE`/`ROBOT_CREATION_WINDOW` set in `.env`.
+`api/` never creates a Robot directly. `chat/` owns `/api/chat/` + `chatrooms_cleansing`.
+`control/` owns `BalanceLog` + `do_accounting`/`compute_node_balance`.
 
 ## Supporting modules
 `utils.py`: `get_exchange_rates` — median across `MARKET_PRICE_APIS` (env), skips
