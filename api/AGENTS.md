@@ -95,8 +95,17 @@ Wire format (byte-exact; mirrored in `frontend/src/utils/actionSignature.ts`):
 - Validation runs before any mutation — on `take`, before the `transaction.atomic`
   `select_for_update` block.
 - `REQUIRE_SIGNED_ACTIONS` (default `true`) is a temporary escape hatch for coordinators
-  mid-upgrade: `false` restores the pre-hardening behaviour for outdated desktop/Android
-  clients. Never deploy it permanently — with it off, a stolen bearer can settle escrow.
+  mid-upgrade: `false` keeps outdated desktop/Android clients working. Never deploy it
+  permanently — with it off, a stolen bearer can settle escrow for robots whose client
+  never signed.
+- Transition rules while it is `false`:
+  - a signature that is present is still fully verified (1048/1060/1061 as above);
+  - the first valid signed action sets `Robot.signs_actions_since` (conditional update);
+    from then on unsigned writes for that robot get 1059, so users who updated are
+    protected immediately, without waiting for the flag to flip;
+  - `submit_statement` without an action signature takes the statement as plain text
+    (outdated clients do not sign it); with an action signature the statement must be
+    signed too.
 
 ## Order state machine
 19 statuses in `api/models/order.py` — see `api/models/AGENTS.md` for the full enum, expiry

@@ -726,11 +726,16 @@ class OrderView(viewsets.ViewSet):
             if not valid:
                 return Response(context, status.HTTP_400_BAD_REQUEST)
 
-            valid_statement, extracted_statement = verify_signed_message(
-                request.user.robot.public_key, statement
-            )
-            if not valid_statement:
-                return Response(new_error(1048), status.HTTP_400_BAD_REQUEST)
+            if signature:
+                valid_statement, extracted_statement = verify_signed_message(
+                    request.user.robot.public_key, statement
+                )
+                if not valid_statement:
+                    return Response(new_error(1048), status.HTTP_400_BAD_REQUEST)
+            else:
+                # Only reachable while REQUIRE_SIGNED_ACTIONS is off and this robot
+                # never signed: an outdated client sends its statement as plain text.
+                extracted_statement = statement
 
             valid, context = Logics.dispute_statement(
                 order, request.user, extracted_statement
@@ -842,6 +847,9 @@ class RobotView(APIView):
         if not valid:
             return Response(context, status.HTTP_400_BAD_REQUEST)
 
+        # serializer.save() writes the whole row from the instance loaded above, so
+        # pick up signs_actions_since, which the signature check may have just set.
+        robot.refresh_from_db(fields=["signs_actions_since"])
         serializer.save()
 
         new_webhook_url = request.data.get("webhook_url")

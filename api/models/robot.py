@@ -82,6 +82,10 @@ class Robot(models.Model):
     # Stealth invoices
     wants_stealth = models.BooleanField(default=True, null=False)
 
+    # First time this robot sent a valid signed action. From then on its client is known
+    # to sign, so unsigned writes for it are refused even while REQUIRE_SIGNED_ACTIONS is off.
+    signs_actions_since = models.DateTimeField(null=True, default=None, blank=True)
+
     @receiver(post_save, sender=User)
     def create_user_robot(sender, instance, created, **kwargs):
         if created:

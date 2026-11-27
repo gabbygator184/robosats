@@ -631,6 +631,10 @@ def verify_signed_message(pub_key, signed_message):
     is valid (was made by the given pub_key) and the content of the message.
     """
     gpg = gnupg.GPG(gnupghome=config("GNUPG_DIR", default=None))
+    # Clients sign the UTF-8 bytes of the text. python-gnupg encodes str as
+    # latin-1 by default, so any accented character made a valid signature
+    # fail and any character outside latin-1 raised UnicodeEncodeError.
+    gpg.encoding = "utf-8"
 
     # import the public key
     import_result = gpg.import_keys(pub_key)
@@ -686,19 +690,16 @@ def warn_shadow_mode_unsigned(user, context):
     )
 
 
-def validate_action_signature(user, expected_content, signature):
+def missing_signature(user, context):
     """
-    Validates the detached signature of an order action. The signature must be
-    a valid cleartext PGP signature made with the robot's private key and its
-    content must equal `expected_content`. The Robot row is always fetched
-    fresh from the database.
-    """
-    if not REQUIRE_SIGNED_ACTIONS:
-        if not signature:
-            warn_shadow_mode_unsigned(user, "order action")
-        return True, None
+    Answer for a state-changing request that carries no signature.
 
-    if not signature:
+    With REQUIRE_SIGNED_ACTIONS on it is refused. While it is off (upgrade window for
+    outdated clients) it is still served, except for a robot that has already sent a
+    valid signed action to this coordinator: its client is known to sign, so an unsigned
+    write for it can only come from someone replaying its bearer token.
+    """
+    if REQUIRE_SIGNED_ACTIONS or Robot.objects.get(user=user).signs_actions_since:
         # A missing signature is a different problem from a bad one. A client
         # too old to sign sends none at all, and only that user can fix it, so
         # the answer has to be an instruction rather than a description. It
@@ -706,11 +707,39 @@ def validate_action_signature(user, expected_content, signature):
         # verify.
         return False, new_error(1059, {"recover_url": robot_recovery_url()})
 
+    warn_shadow_mode_unsigned(user, context)
+    return True, None
+
+
+def mark_robot_signs_actions(user):
+    """
+    Records that this robot's client signs. A conditional update, so it never
+    overwrites the first date and never rewrites the rest of the Robot row.
+    """
+    Robot.objects.filter(user=user, signs_actions_since__isnull=True).update(
+        signs_actions_since=timezone.now()
+    )
+
+
+def validate_action_signature(user, expected_content, signature):
+    """
+    Validates the detached signature of an order action. The signature must be
+    a valid cleartext PGP signature made with the robot's private key and its
+    content must equal `expected_content`. The Robot row is always fetched
+    fresh from the database.
+
+    A signature that is present is verified whatever REQUIRE_SIGNED_ACTIONS
+    says: only a signing client sends one, so a bad one is never let through.
+    """
+    if not signature:
+        return missing_signature(user, "order action")
+
     public_key = Robot.objects.get(user=user).public_key
     valid, content = verify_signed_message(public_key, signature)
     if not valid or content != expected_content:
         return False, new_error(1048)
 
+    mark_robot_signs_actions(user)
     return True, None
 
 
@@ -722,17 +751,11 @@ def validate_signed_action_timestamp(user, action, signature):
     timestamp must be within ACTION_SIGNATURE_WINDOW seconds of server time.
     The coordinator binding keeps a signature captured at one coordinator from
     being replayed at another. The Robot row is always fetched fresh from the
-    database.
+    database. Missing and present signatures follow the same rules as in
+    validate_action_signature.
     """
-    if not REQUIRE_SIGNED_ACTIONS:
-        if not signature:
-            warn_shadow_mode_unsigned(user, action)
-        return True, None
-
     if not signature:
-        # Same split as in validate_action_signature: no signature at all is an
-        # outdated client, not a malformed action.
-        return False, new_error(1059, {"recover_url": robot_recovery_url()})
+        return missing_signature(user, action)
 
     public_key = Robot.objects.get(user=user).public_key
     valid, content = verify_signed_message(public_key, signature)
@@ -763,6 +786,7 @@ def validate_signed_action_timestamp(user, action, signature):
         # and the user is told to look at their clock.
         return False, new_error(1060)
 
+    mark_robot_signs_actions(user)
     return True, None
 
 
